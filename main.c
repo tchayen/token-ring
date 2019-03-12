@@ -67,6 +67,7 @@ typedef enum {
 typedef struct {
     MessageType type;
     int value;
+    int next_port; // For `INIT`, means that given client wants to join *before* the one with `next_port`.
 } Token;
 
 const int ERROR_NOT_ENOUGH_ARGS = 101;
@@ -177,6 +178,16 @@ int main(int argc, char **argv) {
         address next_addr = get_addr(NEXT_IP, NEXT_PORT);
         int next_socket_fd = get_socket_fd();
         call_connect(next_socket_fd, next_addr);
+
+        if (HAS_TOKEN) {
+            Token token;
+            memset(&token, 0, sizeof(token));
+            token.type = INIT;
+            token.next_port = NEXT_PORT;
+            write(next_socket_fd, &token, sizeof(token));
+        } else {
+            // wait for INIT
+        }
 
         int stop = FALSE;
         while (!stop) {
