@@ -59,7 +59,7 @@
 typedef struct sockaddr_in address;
 
 typedef enum {
-    NEW_USER,
+    INIT,
     MESSAGE,
     QUIT,
 } MessageType;
@@ -117,11 +117,11 @@ void load_args(int argc, char **argv) {
 
     printf(
             "{\n"
-            "    clientName: '%s',\n"
-            "    clientPort: %d,\n"
-            "    next: %s:%d,\n"
-            "    hasToken: %s,\n"
-            "    protocol: '%s',\n"
+            "    \"clientName\": \"%s\",\n"
+            "    \"clientPort\": %d,\n"
+            "    \"next\": \"%s:%d\",\n"
+            "    \"hasToken\": %s,\n"
+            "    \"protocol\": \"%s\",\n"
             "}\n",
             CLIENT_NAME,
             CLIENT_PORT,
@@ -134,7 +134,7 @@ void load_args(int argc, char **argv) {
 
 address get_addr(unsigned int converted_ip, int port) {
     address addr;
-    memset(&addr, NULL, sizeof(addr));
+    memset(&addr, 0, sizeof(addr));
     addr.sin_family = IP_V4;
     addr.sin_port = htons((__uint16_t) port);
     addr.sin_addr.s_addr = converted_ip;
@@ -181,14 +181,11 @@ int main(int argc, char **argv) {
         int stop = FALSE;
         while (!stop) {
             Token token;
-            memset(&token, NULL, sizeof(token));
-
+            memset(&token, 0, sizeof(token));
             client_socket_fd = call_accept(client_socket_fd);
-
             read(client_socket_fd, &token, sizeof(token));
-
             switch (token.type) {
-                case NEW_USER:
+                case INIT:
                     break;
                 case MESSAGE:
                     token.value = rand();
@@ -198,10 +195,8 @@ int main(int argc, char **argv) {
                     stop = TRUE;
                     break;
             }
-
             sleep(1000);
         }
-
         close(client_socket_fd);
         close(next_socket_fd);
     } else {
