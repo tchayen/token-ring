@@ -53,6 +53,9 @@
 // -> https://linux.die.net/man/2/close
 // close() closes a file descriptor, so that it no longer refers to any file and may be reused.
 
+#define TRUE 1
+#define FALSE 0
+
 typedef struct sockaddr_in address;
 
 typedef enum {
@@ -66,15 +69,14 @@ typedef struct {
     int value;
 } Token;
 
-const int ERROR_NOT_ENOUGH_ARGS = 1;
-const int ERROR_INCORRECT_INITIAL_TOKEN = 2;
-const int ERROR_INCORRECT_PROTOCOL = 3;
-const int ERROR_CANT_CREATE_SOCKET = 4;
-const int ERROR_BIND_FAILED = 5;
-const int ERROR_LISTEN_FAILED = 6;
-const int ERROR_ACCEPT_FAILED = 7;
-
-const int ERROR_UNIMPLEMENTED = 255;
+const int ERROR_NOT_ENOUGH_ARGS = 101;
+const int ERROR_INCORRECT_INITIAL_TOKEN = 102;
+const int ERROR_INCORRECT_PROTOCOL = 103;
+const int ERROR_CANT_CREATE_SOCKET = 104;
+const int ERROR_BIND_FAILED = 105;
+const int ERROR_LISTEN_FAILED = 106;
+const int ERROR_ACCEPT_FAILED = 107;
+const int ERROR_UNIMPLEMENTED = 108;
 
 const int BASE_TEN = 10;
 const int IP_V4 = AF_INET;
@@ -87,7 +89,7 @@ int NEXT_PORT;
 int HAS_TOKEN;
 int USING_TCP;
 
-int load_args(int argc, char **argv) {
+void load_args(int argc, char **argv) {
     if (argc < 5) exit(ERROR_NOT_ENOUGH_ARGS);
 
     CLIENT_NAME = argv[1];
@@ -98,17 +100,17 @@ int load_args(int argc, char **argv) {
     NEXT_PORT = (int) strtol(strtok(NULL, ":"), NULL, BASE_TEN);
 
     if (strcmp(argv[4], "true") == 0) {
-        HAS_TOKEN = 0;
+        HAS_TOKEN = TRUE;
     } else if (strcmp(argv[4], "false") == 0) {
-        HAS_TOKEN = 1;
+        HAS_TOKEN = FALSE;
     } else {
         exit(ERROR_INCORRECT_INITIAL_TOKEN);
     }
 
     if (strcmp(argv[5], "tcp") == 0) {
-        USING_TCP = 0;
+        USING_TCP = TRUE;
     } else if (strcmp(argv[5], "udp") == 0) {
-        USING_TCP = 1;
+        USING_TCP = FALSE;
     } else {
         exit(ERROR_INCORRECT_PROTOCOL);
     }
@@ -132,7 +134,7 @@ int load_args(int argc, char **argv) {
 
 address get_addr(unsigned int converted_ip, int port) {
     address addr;
-    memset(&addr, 0, sizeof(addr));
+    memset(&addr, NULL, sizeof(addr));
     addr.sin_family = IP_V4;
     addr.sin_port = htons((__uint16_t) port);
     addr.sin_addr.s_addr = converted_ip;
@@ -164,8 +166,7 @@ int call_accept(int socket_fd) {
 }
 
 int main(int argc, char **argv) {
-    int status = load_args(argc, argv);
-    if (status != 0) return status;
+    load_args(argc, argv);
 
     if (USING_TCP) {
         address client_addr = get_addr(LOCALHOST_IP, CLIENT_PORT);
@@ -177,10 +178,10 @@ int main(int argc, char **argv) {
         int next_socket_fd = get_socket_fd();
         call_connect(next_socket_fd, next_addr);
 
-        int stop = 0;
+        int stop = FALSE;
         while (!stop) {
             Token token;
-            memset(&token, 0, sizeof(token));
+            memset(&token, NULL, sizeof(token));
 
             client_socket_fd = call_accept(client_socket_fd);
 
@@ -194,7 +195,7 @@ int main(int argc, char **argv) {
                     write(next_socket_fd, &token, sizeof(token));
                     break;
                 case QUIT:
-                    stop = 1;
+                    stop = TRUE;
                     break;
             }
 
