@@ -56,20 +56,6 @@
 #define TRUE 1
 #define FALSE 0
 
-typedef struct sockaddr_in address;
-
-typedef enum {
-    INIT,
-    MESSAGE,
-    QUIT,
-} MessageType;
-
-typedef struct {
-    MessageType type;
-    int value;
-    int next_port; // For `INIT`, means that given client wants to join *before* the one with `next_port`.
-} Token;
-
 const int ERROR_NOT_ENOUGH_ARGS = 101;
 const int ERROR_INCORRECT_INITIAL_TOKEN = 102;
 const int ERROR_INCORRECT_PROTOCOL = 103;
@@ -83,10 +69,35 @@ const int BASE_TEN = 10;
 const int IP_V4 = AF_INET;
 const unsigned int LOCALHOST_IP = htonl(INADDR_ANY);
 
+typedef struct sockaddr_in SocketAddress;
+
+typedef enum {
+    JOIN,
+    MESSAGE,
+    QUIT,
+} MessageType;
+
+typedef struct {
+    unsigned int ip;
+    unsigned int port;
+} Address;
+
+typedef struct {
+    MessageType type;
+    int value;
+    // For `JOIN`, means that given client wants to join *before* the one with `next_port`.
+    Address next_addr;
+    Address sender_addr;
+    Address author_addr;
+} Token;
+
+Address CLIENT_ADDRESS;
+Address NEXT_ADDRESS;
+
 char *CLIENT_NAME;
-int CLIENT_PORT;
+unsigned int CLIENT_PORT;
 unsigned int NEXT_IP;
-int NEXT_PORT;
+unsigned int NEXT_PORT;
 int HAS_TOKEN;
 int USING_TCP;
 
@@ -94,11 +105,13 @@ void load_args(int argc, char **argv) {
     if (argc < 5) exit(ERROR_NOT_ENOUGH_ARGS);
 
     CLIENT_NAME = argv[1];
-    CLIENT_PORT = (int) strtol(argv[2], NULL, BASE_TEN);
+    CLIENT_PORT = (unsigned int) strtol(argv[2], NULL, BASE_TEN);
+    CLIENT_ADDRESS = (Address){ .ip = LOCALHOST_IP /* TODO: find out what to do with it */, .port = CLIENT_PORT };
 
     char *next_ip_string = strtok(argv[3], ":");
     NEXT_IP = inet_addr(next_ip_string);
-    NEXT_PORT = (int) strtol(strtok(NULL, ":"), NULL, BASE_TEN);
+    NEXT_PORT = (unsigned int) strtol(strtok(NULL, ":"), NULL, BASE_TEN);
+    NEXT_ADDRESS = (Address){ .ip = NEXT_IP, .port = NEXT_PORT };
 
     if (strcmp(argv[4], "true") == 0) {
         HAS_TOKEN = TRUE;
@@ -133,8 +146,8 @@ void load_args(int argc, char **argv) {
     );
 }
 
-address get_addr(unsigned int converted_ip, int port) {
-    address addr;
+SocketAddress get_addr(unsigned int converted_ip, int port) {
+    SocketAddress addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = IP_V4;
     addr.sin_port = htons((__uint16_t) port);
@@ -148,7 +161,7 @@ int get_socket_fd() {
     return socket_fd;
 }
 
-void call_bind(int socket_fd, address addr) {
+void call_bind(int socket_fd, SocketAddress addr) {
     if (bind(socket_fd, (struct sockaddr *) &addr, sizeof(addr)) != 0) exit(ERROR_BIND_FAILED);
 }
 
@@ -156,7 +169,7 @@ void call_listen(int socket_fd) {
     if (listen(socket_fd, SOMAXCONN) != 0) exit(ERROR_LISTEN_FAILED);
 }
 
-int call_connect(int socket, address addr) {
+int call_connect(int socket, SocketAddress addr) {
     return connect(socket, (const struct sockaddr *) &addr, sizeof(addr));
 }
 
@@ -166,40 +179,67 @@ int call_accept(int socket_fd) {
     return new_socket;
 }
 
+int cmpaddr(Address a, Address b) {
+    return a.ip == b.ip && a.port == b.port;
+}
+
 int main(int argc, char **argv) {
     load_args(argc, argv);
 
     if (USING_TCP) {
-        address client_addr = get_addr(LOCALHOST_IP, CLIENT_PORT);
+        SocketAddress client_addr = get_addr(LOCALHOST_IP, CLIENT_PORT);
         int client_socket_fd = get_socket_fd();
         call_bind(client_socket_fd, client_addr);
         call_listen(client_socket_fd);
 
-        address next_addr = get_addr(NEXT_IP, NEXT_PORT);
+        SocketAddress next_addr = get_addr(NEXT_IP, NEXT_PORT);
         int next_socket_fd = get_socket_fd();
         call_connect(next_socket_fd, next_addr);
 
+        Token token;
+
+        memset(&token, 0, sizeof(token));
+        token = (Token){
+                .type = JOIN,
+                .author_addr = CLIENT_ADDRESS,
+                .sender_addr = CLIENT_ADDRESS,
+                .next_addr = NEXT_ADDRESS,
+        };
+        write(next_socket_fd, &token, sizeof(token));
+
         if (HAS_TOKEN) {
-            Token token;
             memset(&token, 0, sizeof(token));
-            token.type = INIT;
-            token.next_port = NEXT_PORT;
+            token = (Token){
+                    .type = MESSAGE,
+                    .value = 2137,
+                    .author_addr = CLIENT_ADDRESS,
+            };
             write(next_socket_fd, &token, sizeof(token));
-        } else {
-            // wait for INIT
         }
 
         int stop = FALSE;
         while (!stop) {
-            Token token;
+            printf(".\n");
             memset(&token, 0, sizeof(token));
             client_socket_fd = call_accept(client_socket_fd);
             read(client_socket_fd, &token, sizeof(token));
             switch (token.type) {
-                case INIT:
+                case JOIN:
+                    if (cmpaddr(token.author_addr, CLIENT_ADDRESS)) {
+                        // We don't pass message to the next one and `next_addr` already points to `NEXT_ADDRESS`.
+                    } else {
+                        if (cmpaddr(token.next_addr, NEXT_ADDRESS)) {
+                            close(next_socket_fd);
+                            next_addr = get_addr(token.author_addr.ip, token.author_addr.port);
+                            next_socket_fd = get_socket_fd();
+                            call_connect(next_socket_fd, next_addr);
+                        }
+                        token.sender_addr = CLIENT_ADDRESS;
+                        write(next_socket_fd, &token, sizeof(token));
+                    }
                     break;
                 case MESSAGE:
-                    token.value = rand();
+                    if (cmpaddr(token.author_addr, CLIENT_ADDRESS)) break;
                     write(next_socket_fd, &token, sizeof(token));
                     break;
                 case QUIT:
